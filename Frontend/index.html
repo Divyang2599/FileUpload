@@ -2,24 +2,48 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Event Registration</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Secure File Upload</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 50px; }
+        input, button { margin: 10px; padding: 10px; }
+        #result { margin-top: 20px; color: green; }
+    </style>
 </head>
 <body>
-    <h1>Register for Algonquin College Workshop</h1>
-    <form id="regForm">
-        <label for="name">Name:</label>
-        <input type="text" id="name" required>
-        <label for="email">Email:</label>
-        <input type="email" id="email" required>
-        <label for="event">Event:</label>
-        <select id="event" required>
-            <option value="Cloud Basics">Workshop: Cloud Basics</option>
-            <option value="AI in Education">Meetup: AI in Education</option>
-        </select>
-        <button type="submit">Register</button>
+    <h1>Upload Document Securely</h1>
+    <form id="uploadForm">
+        <input type="file" id="fileInput" required>
+        <button type="submit">Upload</button>
     </form>
-    <script src="script.js"></script>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('YOUR_FUNCTION_URL_HERE', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('result').innerHTML = `
+                        Success! <a href="${data.downloadUrl}" target="_blank">Download your file</a>
+                        (Secure link - expires in 24h)
+                    `;
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        });
+    </script>
 </body>
 </html>
