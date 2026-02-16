@@ -1,49 +1,34 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Secure File Upload</title>
-    <style>
-        body { font-family: Arial; text-align: center; padding: 50px; }
-        input, button { margin: 10px; padding: 10px; }
-        #result { margin-top: 20px; color: green; }
-    </style>
-</head>
-<body>
-    <h1>Upload Document Securely</h1>
-    <form id="uploadForm">
-        <input type="file" id="fileInput" required>
-        <button type="submit">Upload</button>
-    </form>
-    <div id="result"></div>
+<script>
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const file = document.getElementById('fileInput').files[0];
+        if (!file) {
+            alert('Please select a file first');
+            return;
+        }
 
-    <script>
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const file = document.getElementById('fileInput').files[0];
-            if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
 
-            const formData = new FormData();
-            formData.append('file', file);
+        try {
+            const response = await fetch('https://fileuploadfunction-g3fdceesg4bdcuef.canadacentral-01.azurewebsites.net/api/HttpTrigger1', {
+                method: 'POST',
+                body: formData
+            });
 
-            try {
-                const response = await fetch('https://fileuploadfunction-g3fdceesg4bdcuef.canadacentral-01.azurewebsites.net/api/HttpTrigger1', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    document.getElementById('result').innerHTML = `
-                        Success! <a href="${data.downloadUrl}" target="_blank">Download your file</a>
-                        (Secure link - expires in 24h)
-                    `;
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            } catch (err) {
-                alert('Network error: ' + err.message);
+            const data = await response.json();  // This will work now that function returns JSON always
+
+            if (response.ok) {
+                document.getElementById('result').innerHTML = `
+                    Success! <a href="${data.downloadUrl}" target="_blank" download>Download your file</a>
+                    (Secure link - expires in 24h)
+                `;
+            } else {
+                // Handle 400 or other errors from function
+                alert('Upload failed: ' + (data.error || 'Unknown error from server'));
             }
-        });
-    </script>
-</body>
-</html>
+        } catch (err) {
+            alert('Network or fetch error: ' + err.message);
+        }
+    });
+</script>
