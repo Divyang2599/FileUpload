@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard • Secure File Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0b1020; --card:#121a35; --fg:#e7ecff; --muted:#a9b3d4; --accent:#5aa9ff; --danger:#ff6b6b; --bord:#243056; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:linear-gradient(180deg,#0b1020,#0a0f1e 40%); color:var(--fg);}
+    header{ display:flex; gap:16px; align-items:center; justify-content:space-between; padding:16px 22px; background:#0d1430; border-bottom:1px solid var(--bord); position:sticky; top:0; }
+    .brand{ font-weight:700; letter-spacing:.3px; }
+    .user{ color:var(--muted); }
+    main{ max-width:980px; margin:24px auto; padding:0 20px 56px; }
+    .card{ background:var(--card); border:1px solid var(--bord); border-radius:14px; padding:18px; margin-bottom:18px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
+    .row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    input[type="file"]{ background:#0e1530; border:1px solid #223; color:var(--fg); padding:10px; border-radius:10px; }
+    button{ background:var(--accent); color:#001022; border:0; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; }
+    table{ width:100%; border-collapse:collapse; }
+    th, td{ padding:10px 8px; border-bottom:1px solid var(--bord); font-size:14px; }
+    th{ text-align:left; color:var(--muted); font-weight:600; }
+    .muted{ color:var(--muted); }
+    .danger{ background:var(--danger); color:#300; }
+    .pill{ font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid var(--bord); color:var(--muted); }
+    .msg{ margin-top:8px; padding:10px; border-radius:8px; display:none; }
+    .ok{ background:#0f3b1f; color:#baf7c1; }
+    .err{ background:#3b0f0f; color:#ffc7c7; }
+    .actions button{ margin-right:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">Secure File Portal</div>
+    <div class="user">
+      <span id="who" class="pill"></span>
+      <button id="logout">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h3 style="margin:0 0 10px;">Upload a file</h3>
+      <div class="row">
+        <input id="file" type="file" />
+        <button id="uploadBtn">Upload</button>
+        <span id="uploadHint" class="muted"></span>
+      </div>
+      <div id="uok" class="msg ok"></div>
+      <div id="uerr" class="msg err"></div>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 10px;">Your files</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>File name</th>
+            <th>Uploaded</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="3" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+      <div id="lok" class="msg ok"></div>
+      <div id="lerr" class="msg err"></div>
+    </section>
+  </main>
+
+<script>
+  // === CONFIG ===
+  const FN_BASE = "https://<YOUR-FUNCTION-APP>.azurewebsites.net";
+  const URLS = {
+    list:   `${FN_BASE}/api/listUserFiles`,           // GET ?userId=
+    upload: `${FN_BASE}/api/uploadFile`,              // POST multipart form
+    del:    `${FN_BASE}/api/deleteFile`,              // POST JSON
+    // OPTIONAL helper endpoint for Download (add function code at the end of this message)
+    getDL:  `${FN_BASE}/api/getDownloadUrl`           // GET ?userId=&blobName=
+  };
+
+  // === Session check ===
+  const userId = localStorage.getItem('userId');
+  if (!userId) {
+    location.href = 'login.html';
+  }
+
+  document.getElementById('who').textContent = userId;
+  document.getElementById('logout').onclick = () => {
+    localStorage.removeItem('userId');
+    location.href = 'login.html';
+  };
+
+  const rows = document.getElementById('rows');
+  const uok = document.getElementById('uok'), uerr = document.getElementById('uerr');
+  const lok = document.getElementById('lok'), lerr = document.getElementById('lerr');
+  const hint = document.getElementById('uploadHint');
+
+  function show(el, text){ el.textContent = text; el.style.display = 'block'; }
+  function hide(...els){ els.forEach(e => e.style.display='none'); }
+
+  // === Load files ===
+  async function loadFiles(){
+    hide(lok, lerr);
+    rows.innerHTML = `<tr><td colspan="3" class="muted">Loading…</td></tr>`;
+    try {
+      const res = await fetch(`${URLS.list}?userId=${encodeURIComponent(userId)}`, { method:'GET' });
+      const files = await res.json();
+      if (!res.ok) throw new Error(files.error || `HTTP ${res.status}`);
+
+      if (!Array.isArray(files) || files.length === 0) {
+        rows.innerHTML = `<tr><td colspan="3" class="muted">No files uploaded yet.</td></tr>`;
+        return;
+      }
+
+      rows.innerHTML = files.map(f => {
+        const when = new Date(f.uploadedAt || Date.now()).toLocaleString();
+        const blobName = f.blobName || f.id; // we stored id=blobName in our backend
+        return `
+          <tr>
+            <td>${escapeHtml(f.fileName || blobName)}</td>
+            <td class="muted">${when}</td>
+            <td class="actions">
+              <button onclick="downloadFile('${encodeURIComponent(blobName)}')">Download</button>
+              <button class="danger" onclick="deleteFile('${encodeURIComponent(blobName)}')">Delete</button>
+            </td>
+          </tr>`;
+      }).join('');
+    } catch (e) {
+      rows.innerHTML = `<tr><td colspan="3" class="muted">Failed to load: ${escapeHtml(e.message)}</td></tr>`;
+      show(lerr, e.message);
+    }
+  }
+
+  // === Upload ===
+  document.getElementById('uploadBtn').onclick = async () => {
+    hide(uok, uerr);
+    const f = document.getElementById('file').files[0];
+    if (!f) { show(uerr, 'Please choose a file.'); return; }
+
+    const fd = new FormData();
+    fd.append('file', f, f.name);
+
+    hint.textContent = 'Uploading…';
+
+    try {
+      // Add userId as query (your upload function reads query or body)
+      const res = await fetch(`${URLS.upload}?userId=${encodeURIComponent(userId)}`, {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      show(uok, `Uploaded: ${data.fileName || f.name}`);
+      hint.textContent = '';
+      document.getElementById('file').value = '';
+      await loadFiles();
+    } catch (e) {
+      hint.textContent = '';
+      show(uerr, e.message);
+    }
+  };
+
+  // === Download (calls helper endpoint to get a SAS URL) ===
+  async function downloadFile(blobNameEnc){
+    const blobName = decodeURIComponent(blobNameEnc);
+    try {
+      const res = await fetch(`${URLS.getDL}?userId=${encodeURIComponent(userId)}&blobName=${encodeURIComponent(blobName)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (data.url) {
+        window.open(data.url, '_blank');
+      } else {
+        alert('Download endpoint not configured yet. See instructions at the bottom of the guide.');
+      }
+    } catch (e) {
+      alert('Download failed: ' + e.message);
+    }
+  }
+
+  // === Delete ===
+  async function deleteFile(blobNameEnc){
+    const blobName = decodeURIComponent(blobNameEnc);
+    if (!confirm(`Delete ${blobName}?`)) return;
+
+    try {
+      const res = await fetch(URLS.del, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ userId, blobName })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      show(lok, 'Deleted');
+      await loadFiles();
+    } catch (e) {
+      show(lerr, e.message);
+    }
+  }
+
+  // Helpers
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+  // Go!
+  loadFiles();
+</script>
+</body>
+</html>
